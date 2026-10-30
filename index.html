@@ -17,6 +17,7 @@
     --uv: #a68bff;
     --found: #7fe0a4;
     --ruled: #ff7a6b;
+    --warn: #f2c84b;
     --ev-emf: #ff5c5c;
     --ev-sb: #ffa94d;
     --ev-uv: #b48cff;
@@ -176,6 +177,15 @@
     gap: .7rem;
   }
   .card.out { opacity: .4; }
+  .card.soft {
+    border-color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 7%, var(--panel));
+  }
+  .card .mismatch { color: var(--warn); font-size: .8rem; margin-top: -.4rem; }
+  .card .mismatch ul { margin: .2rem 0 0; padding-left: 1rem; }
+  .tells li.conflict { color: var(--warn); text-decoration: line-through; }
+  .fit-heading { font: 1.1rem var(--type); color: var(--warn); margin: 2.5rem 0 .3rem; }
+  .fit-hint { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
   .card h3 {
     font: 1.6rem/1.1 var(--type);
     margin: 0;
@@ -241,7 +251,7 @@
     <div class="evidence" id="evidence"></div>
 
     <h2>Behaviour</h2>
-    <p class="hint">Same here: once for “seen it”, twice for “definitely not”.</p>
+    <p class="hint">Once for “seen it”, twice for “definitely not”. Behaviour never removes a ghost; ones that don’t fit turn yellow and move down.</p>
     <div id="behaviours"></div>
 
     <div class="actions">
@@ -253,6 +263,11 @@
 
   <main>
     <div class="grid" id="grid"></div>
+    <div id="softWrap" hidden>
+      <h2 class="fit-heading">Evidence fits, behaviour doesn’t</h2>
+      <p class="fit-hint">Still possible. Behaviour can be misread, and some tells only happen under certain conditions.</p>
+      <div class="grid" id="softGrid"></div>
+    </div>
     <div id="outWrap" hidden>
       <h2 class="out-heading">Ruled out</h2>
       <div class="grid" id="outGrid"></div>
@@ -533,20 +548,26 @@ function check(g) {
   if (g.guar && N > 0 && N < 3 && ruled.includes(g.guar))
     return `${EVIDENCE[g.guar].name} is guaranteed`;
 
-  for (const t of keysWith(state.tags, 1))
-    if (!g.tags.includes(t)) return `Doesn’t: ${TAGS[t].toLowerCase()}`;
-  for (const t of keysWith(state.tags, 2))
-    if (g.tags.includes(t)) return `Known for: ${TAGS[t].toLowerCase()}`;
-
   return null;
 }
 
+/* Behaviour never eliminates; it returns what doesn't fit */
+function mismatches(g) {
+  const list = [];
+  for (const t of keysWith(state.tags, 1))
+    if (!g.tags.includes(t)) list.push(`Not known for: ${TAGS[t].toLowerCase()}`);
+  for (const t of keysWith(state.tags, 2))
+    if (g.tags.includes(t)) list.push(`Usually does: ${TAGS[t].toLowerCase()}`);
+  return list;
+}
+
 /* ---------- Rendering ---------- */
-function card(g, reason) {
+function card(g, reason, miss = []) {
   const found = keysWith(state.ev, 1);
   const seen = keysWith(state.tags, 1);
+  const notSeen = keysWith(state.tags, 2);
   const el = document.createElement("article");
-  el.className = "card" + (reason ? " out" : "");
+  el.className = "card" + (reason ? " out" : miss.length ? " soft" : "");
 
   const pills = g.ev.map(e => {
     const ev = EVIDENCE[e];
@@ -556,11 +577,13 @@ function card(g, reason) {
   }).join("") + (g.fake ? `<span class="pill fake${found.includes(g.fake) ? " hit" : ""}"
       style="--c:${EVIDENCE[g.fake].color}" title="Fake evidence, always present">${EVIDENCE[g.fake].name} (fake)</span>` : "");
 
-  const tells = g.tags.map(t => `<li class="${seen.includes(t) ? "hit" : ""}">${TAGS[t]}</li>`).join("");
+  const tells = g.tags.map(t =>
+    `<li class="${seen.includes(t) ? "hit" : notSeen.includes(t) ? "conflict" : ""}">${TAGS[t]}</li>`).join("");
 
   el.innerHTML = `
     <h3>${g.name}</h3>
     ${reason ? `<div class="why">${reason}</div>` : ""}
+    ${!reason && miss.length ? `<div class="mismatch">Doesn’t fit what you marked:<ul>${miss.map(m => `<li>${m}</li>`).join("")}</ul></div>` : ""}
     <div class="pills">${pills}</div>
     <dl class="stats">
       <dt>Hunts at</dt><dd>${g.hunt}</dd>
@@ -573,24 +596,34 @@ function card(g, reason) {
 
 function render() {
   const grid = document.getElementById("grid");
+  const softGrid = document.getElementById("softGrid");
   const outGrid = document.getElementById("outGrid");
-  grid.innerHTML = ""; outGrid.innerHTML = "";
+  grid.innerHTML = ""; softGrid.innerHTML = ""; outGrid.innerHTML = "";
 
   const seen = keysWith(state.tags, 1);
-  const results = GHOSTS.map(g => ({ g, reason: check(g) }));
-  const possible = results.filter(r => !r.reason)
-    .sort((a, b) => b.g.tags.filter(t => seen.includes(t)).length - a.g.tags.filter(t => seen.includes(t)).length
-                    || a.g.name.localeCompare(b.g.name));
+  const hits = g => g.tags.filter(t => seen.includes(t)).length;
+  const results = GHOSTS.map(g => ({ g, reason: check(g), miss: mismatches(g) }));
+  const possible = results.filter(r => !r.reason);
+  const fits = possible.filter(r => !r.miss.length)
+    .sort((a, b) => hits(b.g) - hits(a.g) || a.g.name.localeCompare(b.g.name));
+  const soft = possible.filter(r => r.miss.length)
+    .sort((a, b) => a.miss.length - b.miss.length || hits(b.g) - hits(a.g) || a.g.name.localeCompare(b.g.name));
   const out = results.filter(r => r.reason);
 
-  possible.forEach(r => grid.appendChild(card(r.g)));
+  fits.forEach(r => grid.appendChild(card(r.g)));
+  soft.forEach(r => softGrid.appendChild(card(r.g, null, r.miss)));
+  document.getElementById("softWrap").hidden = !soft.length;
+
   if (!possible.length) {
-    grid.innerHTML = `<div class="empty">No ghost matches everything you’ve marked. Try un-marking a behaviour you’re unsure about, or check the evidence count for your difficulty.</div>`;
+    grid.innerHTML = `<div class="empty">No ghost matches the evidence you’ve marked. Check the evidence count for your difficulty, or clear an evidence type you’re unsure about.</div>`;
+  } else if (!fits.length) {
+    grid.innerHTML = `<div class="empty">No ghost fits every behaviour you’ve marked. The closest matches are below.</div>`;
   }
 
-  document.getElementById("count").textContent = possible.length;
+  document.getElementById("count").textContent = fits.length;
   document.getElementById("countLabel").textContent =
-    possible.length === 1 ? "ghost left. That’s your ghost." : "ghosts still possible";
+    soft.length ? `fit everything, ${soft.length} more fit the evidence`
+    : fits.length === 1 ? "ghost left. That’s your ghost." : "ghosts still possible";
 
   const wrap = document.getElementById("outWrap");
   wrap.hidden = !state.showOut || !out.length;
