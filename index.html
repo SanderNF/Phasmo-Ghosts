@@ -184,6 +184,19 @@
   .card .mismatch { color: var(--warn); font-size: .8rem; margin-top: -.4rem; }
   .card .mismatch ul { margin: .2rem 0 0; padding-left: 1rem; }
   .tells li.conflict { color: var(--warn); text-decoration: line-through; }
+  .preview-banner {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: -1.25rem -1.5rem 1rem;
+    padding: .5rem 1.5rem;
+    background: color-mix(in srgb, var(--uv) 18%, var(--bg));
+    border-bottom: 1px dashed var(--uv);
+    color: var(--uv);
+    font-size: .9rem;
+  }
+  body.previewing .count strong { color: var(--text); text-shadow: none; }
+  body.previewing .grid { outline: 1px dashed color-mix(in srgb, var(--uv) 40%, transparent); outline-offset: .5rem; border-radius: 4px; }
   .fit-heading { font: 1.1rem var(--type); color: var(--warn); margin: 2.5rem 0 .3rem; }
   .fit-hint { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
   .card h3 {
@@ -262,6 +275,7 @@
   </aside>
 
   <main>
+    <p class="preview-banner" id="previewBanner" hidden></p>
     <div class="grid" id="grid"></div>
     <div id="softWrap" hidden>
       <h2 class="fit-heading">Evidence fits, behaviour doesn’t</h2>
@@ -531,9 +545,9 @@ outBtn.onclick = () => {
 const keysWith = (store, v) => Object.keys(store).filter(k => store[k] === v);
 
 function check(g) {
-  const N = state.evCount;
-  const found = keysWith(state.ev, 1);
-  const ruled = keysWith(state.ev, 2);
+  const N = view.evCount;
+  const found = keysWith(view.ev, 1);
+  const ruled = keysWith(view.ev, 2);
   const all = g.fake ? [...g.ev, g.fake] : g.ev;
 
   for (const e of found)
@@ -554,18 +568,18 @@ function check(g) {
 /* Behaviour never eliminates; it returns what doesn't fit */
 function mismatches(g) {
   const list = [];
-  for (const t of keysWith(state.tags, 1))
+  for (const t of keysWith(view.tags, 1))
     if (!g.tags.includes(t)) list.push(`Not known for: ${TAGS[t].toLowerCase()}`);
-  for (const t of keysWith(state.tags, 2))
+  for (const t of keysWith(view.tags, 2))
     if (g.tags.includes(t)) list.push(`Usually does: ${TAGS[t].toLowerCase()}`);
   return list;
 }
 
 /* ---------- Rendering ---------- */
 function card(g, reason, miss = []) {
-  const found = keysWith(state.ev, 1);
-  const seen = keysWith(state.tags, 1);
-  const notSeen = keysWith(state.tags, 2);
+  const found = keysWith(view.ev, 1);
+  const seen = keysWith(view.tags, 1);
+  const notSeen = keysWith(view.tags, 2);
   const el = document.createElement("article");
   el.className = "card" + (reason ? " out" : miss.length ? " soft" : "");
 
@@ -594,13 +608,51 @@ function card(g, reason, miss = []) {
   return el;
 }
 
+/* ---------- Hover preview ----------
+   Hovering a button shows the result of clicking it.
+   After a click, preview pauses until the mouse leaves that button. */
+let view = state;
+let preview = null;          // { store: "ev"|"tags", key, label }
+let suppressed = null;       // button just clicked
+
+function hoverable(btn, store, key, labels) {
+  btn.addEventListener("pointerenter", e => {
+    if (e.pointerType !== "mouse" || suppressed === btn) return;
+    const next = ((state[store][key] || 0) + 1) % 3;
+    const name = store === "ev" ? EVIDENCE[key].name : TAGS[key];
+    preview = { store, key, next, label: next ? `${name}: ${labels[next]}` : `${name}: cleared` };
+    render();
+  });
+  btn.addEventListener("pointerleave", () => {
+    if (suppressed === btn) suppressed = null;
+    if (preview) { preview = null; render(); }
+  });
+  btn.addEventListener("click", () => { suppressed = btn; preview = null; render(); });
+}
+document.querySelectorAll(".ev-btn").forEach(b => hoverable(b, "ev", b.dataset.key, STATE_LABEL));
+document.querySelectorAll(".tag-btn").forEach(b => hoverable(b, "tags", b.dataset.key, TAG_LABEL));
+
+function buildView() {
+  if (!preview) return state;
+  const v = { ...state, ev: { ...state.ev }, tags: { ...state.tags } };
+  if (preview.next) v[preview.store][preview.key] = preview.next;
+  else delete v[preview.store][preview.key];
+  return v;
+}
+
 function render() {
+  view = buildView();
+  document.body.classList.toggle("previewing", !!preview);
+  const banner = document.getElementById("previewBanner");
+  banner.hidden = !preview;
+  if (preview) banner.textContent = `Preview if you click: ${preview.label}`;
+
   const grid = document.getElementById("grid");
   const softGrid = document.getElementById("softGrid");
   const outGrid = document.getElementById("outGrid");
   grid.innerHTML = ""; softGrid.innerHTML = ""; outGrid.innerHTML = "";
 
-  const seen = keysWith(state.tags, 1);
+  const seen = keysWith(view.tags, 1);
   const hits = g => g.tags.filter(t => seen.includes(t)).length;
   const results = GHOSTS.map(g => ({ g, reason: check(g), miss: mismatches(g) }));
   const possible = results.filter(r => !r.reason);
@@ -626,8 +678,8 @@ function render() {
     : fits.length === 1 ? "ghost left. That’s your ghost." : "ghosts still possible";
 
   const wrap = document.getElementById("outWrap");
-  wrap.hidden = !state.showOut || !out.length;
-  if (state.showOut) out.forEach(r => outGrid.appendChild(card(r.g, r.reason)));
+  wrap.hidden = !view.showOut || !out.length;
+  if (view.showOut) out.forEach(r => outGrid.appendChild(card(r.g, r.reason)));
 
   document.querySelectorAll("#behaviours details").forEach(d => {
     const n = [...d.querySelectorAll(".tag-btn")].filter(b => b.dataset.state !== "0").length;
@@ -635,10 +687,10 @@ function render() {
   });
 
   const warn = document.getElementById("warn");
-  const foundCount = keysWith(state.ev, 1).length;
-  if (foundCount > state.evCount && !(foundCount === state.evCount + 1 && state.ev.orb === 1)) {
+  const foundCount = keysWith(view.ev, 1).length;
+  if (foundCount > view.evCount && !(foundCount === view.evCount + 1 && view.ev.orb === 1)) {
     warn.hidden = false;
-    warn.textContent = `You’ve marked ${foundCount} evidence but this difficulty only shows ${state.evCount}. Only the Mimic’s fake orbs can go over.`;
+    warn.textContent = `You’ve marked ${foundCount} evidence but this difficulty only shows ${view.evCount}. Only the Mimic’s fake orbs can go over.`;
   } else warn.hidden = true;
 }
 
