@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ghost Journal – Phasmophobia evidence filter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #121820;
+    --panel: #1a222d;
+    --line: #2b3746;
+    --text: #dfe5ec;
+    --muted: #8d9aab;
+    --uv: #a68bff;
+    --found: #7fe0a4;
+    --ruled: #ff7a6b;
+    --ev-emf: #ff5c5c;
+    --ev-sb: #ffa94d;
+    --ev-uv: #b48cff;
+    --ev-orb: #e8f1ff;
+    --ev-wri: #7fb4ff;
+    --ev-frz: #6fe3f0;
+    --ev-dots: #7dff9a;
+    --type: "Special Elite", "Courier New", Courier, monospace;
+    --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 var(--body);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--uv); outline-offset: 2px; }
+
+  header {
+    padding: 2rem 1.5rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  header h1 {
+    font: 2.4rem/1 var(--type);
+    margin: 0;
+    letter-spacing: .01em;
+  }
+  header p { margin: .4rem 0 0; color: var(--muted); max-width: 46ch; }
+  .count {
+    font-family: var(--type);
+    text-align: right;
+  }
+  .count strong {
+    display: block;
+    font-size: 4.5rem;
+    line-height: .9;
+    color: var(--uv);
+    font-weight: 400;
+    text-shadow: 0 0 24px rgba(166,139,255,.35);
+  }
+  .count span { color: var(--muted); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) 1fr;
+    gap: 0;
+    min-height: calc(100vh - 140px);
+  }
+  aside {
+    border-right: 1px solid var(--line);
+    padding: 1.25rem 1.25rem 3rem;
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+  aside h2 {
+    font: 1.15rem var(--type);
+    margin: 1.5rem 0 .6rem;
+  }
+  aside h2:first-child { margin-top: 0; }
+  .hint { color: var(--muted); font-size: .85rem; margin: -.3rem 0 .7rem; }
+
+  .difficulty { display: flex; gap: .35rem; flex-wrap: wrap; }
+  .difficulty button {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: .3rem .6rem;
+    font-size: .9rem;
+  }
+  .difficulty button[aria-pressed="true"] { border-color: var(--uv); color: var(--uv); }
+
+  .evidence { display: grid; gap: .35rem; }
+  .ev-btn {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: .5rem .7rem;
+    text-align: left;
+  }
+  .ev-btn .dot {
+    width: .7rem; height: .7rem; border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 8px var(--c);
+    flex: none;
+  }
+  .ev-btn .state { margin-left: auto; font-size: .8rem; color: var(--muted); }
+  .ev-btn[data-state="1"] { border-color: var(--found); }
+  .ev-btn[data-state="1"] .state { color: var(--found); }
+  .ev-btn[data-state="2"] { border-color: var(--ruled); opacity: .75; }
+  .ev-btn[data-state="2"] .name { text-decoration: line-through; }
+  .ev-btn[data-state="2"] .state { color: var(--ruled); }
+
+  details { border-top: 1px solid var(--line); padding: .5rem 0; }
+  details summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: .25rem 0;
+    list-style-position: inside;
+  }
+  details summary .n { color: var(--uv); font-weight: 500; margin-left: .3rem; }
+  .tags { display: flex; flex-wrap: wrap; gap: .35rem; padding: .5rem 0 .25rem; }
+  .tag-btn {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: 999px;
+    padding: .25rem .65rem;
+    font-size: .85rem;
+    color: var(--muted);
+  }
+  .tag-btn[data-state="1"] { border: 1px solid var(--found); color: var(--found); }
+  .tag-btn[data-state="2"] { border: 1px solid var(--ruled); color: var(--ruled); text-decoration: line-through; }
+
+  .actions { display: flex; gap: .5rem; margin-top: 1.5rem; flex-wrap: wrap; }
+  .actions button {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: .45rem .8rem;
+  }
+  .warn {
+    color: var(--ruled);
+    font-size: .85rem;
+    margin: .6rem 0 0;
+  }
+
+  main { padding: 1.25rem 1.5rem 3rem; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .empty {
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 2rem;
+    color: var(--muted);
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1rem 1.1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .7rem;
+  }
+  .card.out { opacity: .4; }
+  .card h3 {
+    font: 1.6rem/1.1 var(--type);
+    margin: 0;
+  }
+  .card .why { color: var(--ruled); font-size: .8rem; margin-top: -.4rem; }
+  .pills { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .pill {
+    font-size: .78rem;
+    border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+    color: var(--c);
+    border-radius: 4px;
+    padding: .1rem .45rem;
+  }
+  .pill.hit { background: color-mix(in srgb, var(--c) 22%, transparent); border-color: var(--c); }
+  .pill.fake { border-style: dashed; }
+  .stats {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .1rem .8rem;
+    font-size: .85rem;
+    margin: 0;
+  }
+  .stats dt { color: var(--muted); }
+  .stats dd { margin: 0; }
+  .tells { margin: 0; padding: 0; list-style: none; font-size: .88rem; }
+  .tells li { padding-left: 1rem; position: relative; }
+  .tells li::before { content: "–"; position: absolute; left: 0; color: var(--muted); }
+  .tells li.hit { color: var(--found); }
+  .note { font-size: .85rem; color: var(--muted); margin: 0; border-top: 1px solid var(--line); padding-top: .6rem; }
+
+  .out-heading { font: 1.1rem var(--type); color: var(--muted); margin: 2.5rem 0 1rem; }
+  footer { color: var(--muted); font-size: .8rem; padding: 1rem 1.5rem 2rem; border-top: 1px solid var(--line); }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+    header h1 { font-size: 1.9rem; }
+    .count strong { font-size: 3.2rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .card { transition: opacity .2s; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Ghost Journal</h1>
+    <p>Mark the evidence you’ve found and what the ghost has been doing. The list narrows as you go.</p>
+  </div>
+  <div class="count" aria-live="polite"><strong id="count">30</strong><span id="countLabel">ghosts still possible</span></div>
+</header>
+
+<div class="layout">
+  <aside>
+    <h2>Evidence shown</h2>
+    <p class="hint">How many evidence types your difficulty gives you.</p>
+    <div class="difficulty" id="difficulty"></div>
+
+    <h2>Evidence</h2>
+    <p class="hint">Click once if found, twice to rule it out, three times to clear.</p>
+    <div class="evidence" id="evidence"></div>
+
+    <h2>Behaviour</h2>
+    <p class="hint">Same here: once for “seen it”, twice for “definitely not”.</p>
+    <div id="behaviours"></div>
+
+    <div class="actions">
+      <button id="reset">Clear everything</button>
+      <button id="toggleOut" aria-pressed="false">Show ruled-out ghosts</button>
+    </div>
+    <p class="warn" id="warn" hidden></p>
+  </aside>
+
+  <main>
+    <div class="grid" id="grid"></div>
+    <div id="outWrap" hidden>
+      <h2 class="out-heading">Ruled out</h2>
+      <div class="grid" id="outGrid"></div>
+    </div>
+  </main>
+</div>
+
+<footer>
+  Fan-made tool, not affiliated with Kinetic Games. Ghost data is current as of the 0.18 update (July 2026); edit the GHOSTS list in this file when the game changes.
+</footer>
+
+<script>
+/* ---------- Evidence types ---------- */
+const EVIDENCE = {
+  emf:  { name: "EMF Level 5",       color: "var(--ev-emf)" },
+  sb:   { name: "Spirit Box",        color: "var(--ev-sb)" },
+  uv:   { name: "Ultraviolet",       color: "var(--ev-uv)" },
+  orb:  { name: "Ghost Orbs",        color: "var(--ev-orb)" },
+  wri:  { name: "Ghost Writing",     color: "var(--ev-wri)" },
+  frz:  { name: "Freezing Temps",    color: "var(--ev-frz)" },
+  dots: { name: "D.O.T.S.",          color: "var(--ev-dots)" }
+};
+
+/* ---------- Side evidence / behaviour tags ---------- */
+const TAG_GROUPS = {
+  "Hunt speed": {
+    fast_hunt:        "Very fast at some point in a hunt",
+    slow_hunt:        "Noticeably slow in a hunt",
+    speed_changes:    "Speed differs between hunts",
+    fast_los:         "Speeds up sharply once it sees you",
+    fast_electronics: "Faster near active electronics",
+    fast_cold:        "Faster in cold rooms, slower in warm",
+    fast_far:         "Fast when far away, crawls up close",
+    move_speed:       "Speeds up when you move near it",
+    objects_slow:     "Gets slower the more items you use"
+  },
+  "During hunts": {
+    no_steps:         "Footsteps only heard up close",
+    ignores_still:    "Walks past you if you’re still and quiet",
+    always_finds:     "Finds you even when you hide",
+    hunt_ends_hiding: "Hunt ended when it reached your hiding spot",
+    shapeshift:       "Changes model mid-hunt",
+    invisible_photo:  "Rarely visible, vanishes in photos",
+    freezing_breath:  "Freezing breath visible during hunts",
+    target_one:       "Goes after one specific player"
+  },
+  "When it hunts": {
+    early_hunt:       "Hunted at high sanity",
+    late_hunt:        "Waits until sanity is very low",
+    frequent_hunt:    "Hunts very often",
+    talk_trigger:     "Hunted after people talked near it",
+    fire_trigger:     "Hunted after a flame went out",
+    sprint_trigger:   "Hunted after someone sprinted nearby",
+    crucifix_rage:    "Angrier after a crucifix or smudge",
+    smudge_long:      "Smudge stopped hunts for a long time"
+  },
+  "Activity and interactions": {
+    throws_lots:        "Throws lots of objects, several at once",
+    very_active:        "Very active, lots of events",
+    shy:                "Shy, quiet when people are in the room",
+    double_interaction: "Two interactions far apart at once",
+    states:             "Swings between calm and aggressive",
+    roams_little:       "Barely leaves its room",
+    teleport:           "Random EMF 2 far from its room",
+    lights_off:         "Turns lights off, never on",
+    breaker_never_off:  "Never turns the breaker off",
+    breaker_never_on:   "Never turns the breaker on",
+    door_slam:          "Slammed a door fully shut on its own"
+  },
+  "Equipment and signs": {
+    no_footprints:  "No footprints in salt",
+    six_finger:     "Six-finger or fast-fading prints",
+    sanity_drop:    "Sudden big sanity drops",
+    curse:          "Spirit Box answer drained sanity",
+    sb_breathing:   "Heavy breathing on the Spirit Box",
+    paramic_scream: "Screams on the parabolic mic",
+    singing:        "Singing ghost events",
+    female:         "Always a female ghost model",
+    dots_camera:    "D.O.T.S. only on camera with room empty",
+    fake_orbs:      "Orbs on top of three other evidence"
+  }
+};
+const TAGS = Object.assign({}, ...Object.values(TAG_GROUPS));
+
+/* ---------- Ghosts ----------
+   ev: the three real evidence types
+   guar: evidence never hidden on Nightmare / Insanity
+   fake: extra evidence that always shows (Mimic)
+*/
+const GHOSTS = [
+  { name: "Spirit", ev: ["emf","sb","wri"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["smudge_long"],
+    note: "Smudging it prevents hunts for 3 minutes instead of the usual 90 seconds." },
+  { name: "Wraith", ev: ["emf","sb","dots"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["no_footprints","teleport"],
+    note: "Never steps in salt. Can teleport to a player, leaving EMF 2 far from its room." },
+  { name: "Phantom", ev: ["sb","uv","dots"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["invisible_photo","sanity_drop"],
+    note: "Taking its photo makes it vanish. Blinks less often during hunts, so it’s hard to see." },
+  { name: "Poltergeist", ev: ["sb","uv","wri"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["throws_lots","very_active"],
+    note: "Can throw a burst of objects at once. Pile items in its room to test." },
+  { name: "Banshee", ev: ["uv","orb","dots"], hunt: "50% (target’s sanity)", speed: "1.7 m/s",
+    tags: ["target_one","paramic_scream","singing","female"],
+    note: "Hunts based on its target’s sanity alone and ignores other players when possible." },
+  { name: "Jinn", ev: ["emf","uv","frz"], hunt: "50%", speed: "1.7 m/s, 2.5 m/s from afar",
+    tags: ["fast_hunt","fast_electronics","breaker_never_off","sanity_drop"],
+    note: "Fast when it sees you from far away with the breaker on. Never turns the breaker off." },
+  { name: "Mare", ev: ["sb","orb","wri"], hunt: "60% in dark, 40% in light", speed: "1.7 m/s",
+    tags: ["lights_off","early_hunt"],
+    note: "Switches lights off soon after you turn them on and never turns them on itself." },
+  { name: "Revenant", ev: ["orb","wri","frz"], hunt: "50%", speed: "1.0 m/s, 3.0 m/s on sight",
+    tags: ["fast_hunt","slow_hunt","fast_los"],
+    note: "Crawls when searching, then becomes extremely fast the moment it sees someone." },
+  { name: "Shade", ev: ["emf","wri","frz"], hunt: "35%", speed: "1.7 m/s",
+    tags: ["shy","late_hunt"],
+    note: "Rarely interacts or hunts with players in the room." },
+  { name: "Demon", ev: ["uv","wri","frz"], hunt: "70% (any sanity with ability)", speed: "1.7 m/s",
+    tags: ["early_hunt","frequent_hunt"],
+    note: "Shorter cooldown between hunts. Crucifixes work in a larger radius." },
+  { name: "Yurei", ev: ["orb","frz","dots"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["sanity_drop","door_slam"],
+    note: "Its ability fully shuts a door and drains sanity. Smudging traps it in its room." },
+  { name: "Oni", ev: ["emf","frz","dots"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["very_active"],
+    note: "Very active with people nearby and more visible during hunts. Never does the hissing airball event." },
+  { name: "Yokai", ev: ["sb","orb","dots"], hunt: "80% when talking nearby", speed: "1.7 m/s",
+    tags: ["talk_trigger","early_hunt"],
+    note: "During hunts it can only hear voices and electronics very close by." },
+  { name: "Hantu", ev: ["uv","orb","frz"], guar: "frz", hunt: "50%", speed: "1.4–2.7 m/s by temperature",
+    tags: ["fast_hunt","slow_hunt","fast_cold","freezing_breath","breaker_never_on"],
+    note: "Freezing breath during hunts when the breaker is off. Never turns the breaker on." },
+  { name: "Goryo", ev: ["emf","uv","dots"], guar: "dots", hunt: "50%", speed: "1.7 m/s",
+    tags: ["roams_little","dots_camera"],
+    note: "D.O.T.S. only shows on video camera with nobody in the room." },
+  { name: "Myling", ev: ["emf","uv","wri"], hunt: "50%", speed: "1.7 m/s",
+    tags: ["no_steps"],
+    note: "Footsteps and vocals during hunts are only audible within a short range. More paramic sounds." },
+  { name: "Onryo", ev: ["sb","orb","frz"], hunt: "60%, or when a flame goes out", speed: "1.7 m/s",
+    tags: ["fire_trigger","early_hunt"],
+    note: "Blowing out the third flame can start a hunt. A lit flame nearby blocks its hunts." },
+  { name: "The Twins", ev: ["emf","sb","frz"], hunt: "50%", speed: "1.5 or 1.9 m/s",
+    tags: ["double_interaction","speed_changes","fast_hunt","slow_hunt"],
+    note: "Two interactions can happen far apart at nearly the same time. Hunts alternate speed." },
+  { name: "Raiju", ev: ["emf","orb","dots"], hunt: "65% near electronics", speed: "2.5 m/s near electronics",
+    tags: ["fast_electronics","fast_hunt","early_hunt"],
+    note: "Speeds up near active electronics and disrupts them from further away." },
+  { name: "Obake", ev: ["emf","uv","orb"], guar: "uv", hunt: "50%", speed: "1.7 m/s",
+    tags: ["six_finger","shapeshift"],
+    note: "Can leave six-finger prints and prints that fade fast. Briefly shifts model during hunts." },
+  { name: "The Mimic", ev: ["sb","uv","frz"], fake: "orb", hunt: "Copies another ghost", speed: "Copies another ghost",
+    tags: ["fake_orbs","speed_changes"],
+    note: "Always shows Ghost Orbs as a fake fourth evidence, even on zero-evidence runs." },
+  { name: "Moroi", ev: ["sb","wri","frz"], guar: "sb", hunt: "50%", speed: "1.5–2.25 m/s as sanity drops",
+    tags: ["curse","fast_hunt","speed_changes"],
+    note: "Spirit Box answers curse you. Gets faster as sanity drops; incense blinds it longer." },
+  { name: "Deogen", ev: ["sb","wri","dots"], guar: "sb", hunt: "40%", speed: "3.0 m/s far, 0.4 m/s close",
+    tags: ["fast_far","always_finds","sb_breathing","late_hunt","fast_hunt","slow_hunt"],
+    note: "Always knows where you are. Loop it around furniture when it slows near you." },
+  { name: "Thaye", ev: ["orb","wri","dots"], hunt: "75% young, 15% old", speed: "2.75 m/s young, 1.0 m/s old",
+    tags: ["very_active","early_hunt","late_hunt","speed_changes","fast_hunt","slow_hunt"],
+    note: "Ages over time with people nearby, becoming slower and less active." },
+  { name: "Dayan", ev: ["emf","orb","sb"], hunt: "50%", speed: "Fast if you move near it, 1.2 m/s if still",
+    tags: ["move_speed","female","fast_hunt","slow_hunt"],
+    note: "Punishes movement during hunts. Stand still near it to test." },
+  { name: "Gallu", ev: ["emf","uv","sb"], hunt: "40–60% by state", speed: "1.36–1.96 m/s by state",
+    tags: ["crucifix_rage","states","speed_changes"],
+    note: "Using crucifixes and smudges enrages it. When enraged it can’t walk through salt." },
+  { name: "Obambo", ev: ["wri","uv","dots"], hunt: "10% calm, 65% aggressive", speed: "Slower calm, faster aggressive",
+    tags: ["states","speed_changes","early_hunt","late_hunt","fast_hunt","slow_hunt"],
+    note: "Flips between calm and aggressive on a timer, changing activity and hunt speed." },
+  { name: "Aswang", ev: ["frz","wri","dots"], hunt: "50%", speed: "1.53 m/s, up to 2.53 m/s on sight",
+    tags: ["fast_los","slow_hunt","hunt_ends_hiding"],
+    note: "Can’t kill players in official hiding spots: the hunt ends if it reaches one with you inside." },
+  { name: "Kormos", ev: ["orb","sb","uv"], hunt: "50%, 70% if sprinting nearby", speed: "1.7 m/s, faster from afar",
+    tags: ["ignores_still","sprint_trigger","fast_hunt","early_hunt"],
+    note: "Nearly blind but hears footsteps from far away. Shares all evidence with the Mimic, so check for orbs plus freezing." },
+  { name: "Deildegast", ev: ["emf","wri","dots"], hunt: "50%", speed: "3.0 m/s, down to 0.4 m/s",
+    tags: ["objects_slow","fast_hunt","slow_hunt","speed_changes"],
+    note: "Starts very fast, slowing for each different item picked up or used. Resets after each hunt." }
+];
+
+/* ---------- State ---------- */
+const state = { evCount: 3, ev: {}, tags: {}, showOut: false };
+const STATE_LABEL = ["", "found", "ruled out"];
+const TAG_LABEL = ["", "seen", "not seen"];
+
+/* ---------- Build sidebar ---------- */
+const diffEl = document.getElementById("difficulty");
+[[3,"3 (Amateur–Pro)"],[2,"2 (Nightmare)"],[1,"1 (Insanity)"],[0,"0"]].forEach(([n,label]) => {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.setAttribute("aria-pressed", n === state.evCount);
+  b.onclick = () => {
+    state.evCount = n;
+    diffEl.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    render();
+  };
+  diffEl.appendChild(b);
+});
+
+const evEl = document.getElementById("evidence");
+Object.entries(EVIDENCE).forEach(([key, e]) => {
+  const b = document.createElement("button");
+  b.className = "ev-btn";
+  b.dataset.key = key;
+  b.dataset.state = 0;
+  b.style.setProperty("--c", e.color);
+  b.innerHTML = `<span class="dot"></span><span class="name">${e.name}</span><span class="state"></span>`;
+  b.onclick = () => { cycle(state.ev, key, b, STATE_LABEL); };
+  evEl.appendChild(b);
+});
+
+const behEl = document.getElementById("behaviours");
+Object.entries(TAG_GROUPS).forEach(([group, tags], i) => {
+  const d = document.createElement("details");
+  if (i === 0) d.open = true;
+  d.innerHTML = `<summary>${group}<span class="n"></span></summary>`;
+  const wrap = document.createElement("div");
+  wrap.className = "tags";
+  Object.entries(tags).forEach(([key, label]) => {
+    const b = document.createElement("button");
+    b.className = "tag-btn";
+    b.dataset.key = key;
+    b.dataset.state = 0;
+    b.textContent = label;
+    b.onclick = () => { cycle(state.tags, key, b, TAG_LABEL); };
+    wrap.appendChild(b);
+  });
+  d.appendChild(wrap);
+  behEl.appendChild(d);
+});
+
+function cycle(store, key, btn, labels) {
+  const next = ((store[key] || 0) + 1) % 3;
+  if (next) store[key] = next; else delete store[key];
+  btn.dataset.state = next;
+  const s = btn.querySelector(".state");
+  if (s) s.textContent = labels[next];
+  btn.setAttribute("aria-label", btn.textContent + (next ? `, ${labels[next]}` : ""));
+  render();
+}
+
+document.getElementById("reset").onclick = () => {
+  state.ev = {}; state.tags = {};
+  document.querySelectorAll(".ev-btn, .tag-btn").forEach(b => {
+    b.dataset.state = 0;
+    const s = b.querySelector(".state"); if (s) s.textContent = "";
+  });
+  render();
+};
+const outBtn = document.getElementById("toggleOut");
+outBtn.onclick = () => {
+  state.showOut = !state.showOut;
+  outBtn.setAttribute("aria-pressed", state.showOut);
+  outBtn.textContent = state.showOut ? "Hide ruled-out ghosts" : "Show ruled-out ghosts";
+  render();
+};
+
+/* ---------- Filtering ---------- */
+const keysWith = (store, v) => Object.keys(store).filter(k => store[k] === v);
+
+function check(g) {
+  const N = state.evCount;
+  const found = keysWith(state.ev, 1);
+  const ruled = keysWith(state.ev, 2);
+  const all = g.fake ? [...g.ev, g.fake] : g.ev;
+
+  for (const e of found)
+    if (!all.includes(e)) return `Doesn’t have ${EVIDENCE[e].name}`;
+
+  const realFound = found.filter(e => g.ev.includes(e)).length;
+  if (realFound > N) return `Only ${N} evidence shown on this difficulty`;
+
+  if (g.fake && ruled.includes(g.fake)) return `Always shows ${EVIDENCE[g.fake].name}`;
+  const ruledReal = ruled.filter(e => g.ev.includes(e));
+  if (ruledReal.length > 3 - N) return `Has ${ruledReal.map(e => EVIDENCE[e].name).join(" and ")}`;
+  if (g.guar && N > 0 && N < 3 && ruled.includes(g.guar))
+    return `${EVIDENCE[g.guar].name} is guaranteed`;
+
+  for (const t of keysWith(state.tags, 1))
+    if (!g.tags.includes(t)) return `Doesn’t: ${TAGS[t].toLowerCase()}`;
+  for (const t of keysWith(state.tags, 2))
+    if (g.tags.includes(t)) return `Known for: ${TAGS[t].toLowerCase()}`;
+
+  return null;
+}
+
+/* ---------- Rendering ---------- */
+function card(g, reason) {
+  const found = keysWith(state.ev, 1);
+  const seen = keysWith(state.tags, 1);
+  const el = document.createElement("article");
+  el.className = "card" + (reason ? " out" : "");
+
+  const pills = g.ev.map(e => {
+    const ev = EVIDENCE[e];
+    const guar = g.guar === e ? " ★" : "";
+    return `<span class="pill${found.includes(e) ? " hit" : ""}" style="--c:${ev.color}"
+      ${guar ? 'title="Guaranteed on Nightmare and Insanity"' : ""}>${ev.name}${guar}</span>`;
+  }).join("") + (g.fake ? `<span class="pill fake${found.includes(g.fake) ? " hit" : ""}"
+      style="--c:${EVIDENCE[g.fake].color}" title="Fake evidence, always present">${EVIDENCE[g.fake].name} (fake)</span>` : "");
+
+  const tells = g.tags.map(t => `<li class="${seen.includes(t) ? "hit" : ""}">${TAGS[t]}</li>`).join("");
+
+  el.innerHTML = `
+    <h3>${g.name}</h3>
+    ${reason ? `<div class="why">${reason}</div>` : ""}
+    <div class="pills">${pills}</div>
+    <dl class="stats">
+      <dt>Hunts at</dt><dd>${g.hunt}</dd>
+      <dt>Speed</dt><dd>${g.speed}</dd>
+    </dl>
+    <ul class="tells">${tells}</ul>
+    <p class="note">${g.note}</p>`;
+  return el;
+}
+
+function render() {
+  const grid = document.getElementById("grid");
+  const outGrid = document.getElementById("outGrid");
+  grid.innerHTML = ""; outGrid.innerHTML = "";
+
+  const seen = keysWith(state.tags, 1);
+  const results = GHOSTS.map(g => ({ g, reason: check(g) }));
+  const possible = results.filter(r => !r.reason)
+    .sort((a, b) => b.g.tags.filter(t => seen.includes(t)).length - a.g.tags.filter(t => seen.includes(t)).length
+                    || a.g.name.localeCompare(b.g.name));
+  const out = results.filter(r => r.reason);
+
+  possible.forEach(r => grid.appendChild(card(r.g)));
+  if (!possible.length) {
+    grid.innerHTML = `<div class="empty">No ghost matches everything you’ve marked. Try un-marking a behaviour you’re unsure about, or check the evidence count for your difficulty.</div>`;
+  }
+
+  document.getElementById("count").textContent = possible.length;
+  document.getElementById("countLabel").textContent =
+    possible.length === 1 ? "ghost left. That’s your ghost." : "ghosts still possible";
+
+  const wrap = document.getElementById("outWrap");
+  wrap.hidden = !state.showOut || !out.length;
+  if (state.showOut) out.forEach(r => outGrid.appendChild(card(r.g, r.reason)));
+
+  document.querySelectorAll("#behaviours details").forEach(d => {
+    const n = [...d.querySelectorAll(".tag-btn")].filter(b => b.dataset.state !== "0").length;
+    d.querySelector(".n").textContent = n ? `(${n})` : "";
+  });
+
+  const warn = document.getElementById("warn");
+  const foundCount = keysWith(state.ev, 1).length;
+  if (foundCount > state.evCount && !(foundCount === state.evCount + 1 && state.ev.orb === 1)) {
+    warn.hidden = false;
+    warn.textContent = `You’ve marked ${foundCount} evidence but this difficulty only shows ${state.evCount}. Only the Mimic’s fake orbs can go over.`;
+  } else warn.hidden = true;
+}
+
+render();
+</script>
+</body>
+</html>
